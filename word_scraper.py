@@ -9,13 +9,43 @@ nltk.download('punkt')
 from textblob import TextBlob
 
 class WikiVisitor:
-    def __init__(self, firstLink, depthLimit, visitedSites, wordFrequency) -> None:
-        self.visitedSites = visitedSites
-        self.words_frequency = wordFrequency
+    def __init__(self, firstLink, depthLimit) -> None:
         self.letter_frequency = {}
         self.depthLimit = depthLimit
+        self.checkpointIterationMod = 1000
+        self.iterations = 1
+        self.initFromCheckpoint()
         self.visitWikiPage(firstLink, 0)
 
+    def initFromCheckpoint(self):
+        self.wordFrequencyFile = 'word_frequency.json'
+        self.sitesVisitedFile = 'sites_visited.json'
+
+        try:
+            f = open(self.wordFrequencyFile)
+            wordFrequency = json.load(f)
+
+            f2 = open(self.sitesVisitedFile)
+            sitesVisited = json.load(f2)
+        except: 
+            print('failed to open jsons ... starting empty')
+            wordFrequency = {}
+            sitesVisited = {}
+        
+        self.words_frequency = wordFrequency
+        self.visitedSites = sitesVisited
+    
+    def saveCheckpoint(self):
+        # Serializing json  
+        with open(self.wordFrequencyFile, "w") as outfile:
+            json.dump(self.words_frequency, outfile)
+        with open(self.sitesVisitedFile, "w") as outfile:
+            json.dump(self.visitedSites, outfile)
+
+        print(f'finished writing word_frequency w/ size: {len(self.words_frequency)}')
+        print(f'finished writing visited sites w/ size: {len(self.visitedSites)}')
+
+    # Returns total iterations so we can checkpoint after x iterations
     def visitWikiPage(self, link, depth):
         if depth > self.depthLimit:
             print("reached depth limit... backing off and starting to wind down")
@@ -27,8 +57,9 @@ class WikiVisitor:
         try:
             response = requests.get(link)
         except:
-            print(f"failed to get {link}")
+            print(f'failed to get {link}')
             return
+        
         soup = BeautifulSoup(response.content, 'html.parser')
 
         # Track the words
@@ -36,7 +67,7 @@ class WikiVisitor:
             for p in soup.find(id="bodyContent").find_all("p"):
                 self.trackWords(p.get_text())
         except:
-            print("failed to get <p> tags...")
+            print(f"failed to get track words for link {link}...")
             return
         
         # Find the next link
@@ -75,6 +106,10 @@ class WikiVisitor:
                 self.words_frequency[lowered] = self.words_frequency[lowered] + 1
             else:
                 self.words_frequency[lowered] = 1
+        self.iterations += 1
+        if self.iterations % self.checkpointIterationMod == 0:
+            print(f'saving checkpoint for iteration {self.iterations}') 
+            self.saveCheckpoint()
 
 def isAllLetters(value):
     for character in value:
@@ -82,31 +117,13 @@ def isAllLetters(value):
             return False
     return True
 
-
-wordFrequencyFile = 'word_frequency.json'
-sitesVisitedFile = 'sites_visited.json'
-
-try:
-    f = open(wordFrequencyFile)
-    wordFrequency = json.load(f)
-
-    f2 = open(sitesVisitedFile)
-    sitesVisited = json.load(f2)
-except: 
-    print('failed to open jsons ... starting empty')
-    wordFrequency = {}
-    sitesVisited = {}
-
 # ("https://en.wikipedia.org/wiki/Philosophy", 1)
 # ("https://en.wikipedia.org/wiki/Web_scraping", 1)
 # ("https://en.wikipedia.org/wiki/Astronomy", 1)
-wv = WikiVisitor("https://en.wikipedia.org/wiki/Astronomy", 1, sitesVisited, wordFrequency)
+# ("https://en.wikipedia.org/wiki/Economics", 3)
+# starting: 
+#   finished writing word_frequency w/ size: 5120
+#   finished writing visited sites w/ size: 752
 
-# Serializing json  
-with open(wordFrequencyFile, "w") as outfile:
-    json.dump(wv.words_frequency, outfile)
-with open(sitesVisitedFile, "w") as outfile:
-    json.dump(wv.visitedSites, outfile)
-
-print(f'finished writing word_frequency w/ size: {len(wv.words_frequency)}')
-print(f'finished writing visited sites w/ size: {len(wv.visitedSites)}')
+wv = WikiVisitor("https://en.wikipedia.org/wiki/Economics", 3)
+wv.saveCheckpoint()
